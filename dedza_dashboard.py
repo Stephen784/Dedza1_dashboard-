@@ -1,13 +1,16 @@
-
 import pandas as pd
 import os, datetime
 from jupyter_dash import JupyterDash
 from dash import dcc, html, dash_table, Input, Output, State
 
-WORKBOOK_PATH = r"C:/Users/user/OneDrive/Desktop/CENTRAL REGION 1ST FULLY PAID DATA (1).xlsx"
-SHEET_NAME = r"DEDZA"
-COLLECTED_FILE = r"C:/Users/user/OneDrive/Desktop/district_dashboards\\collected_dedza.csv"
-DISPLAY_FIELDS = ['Farmer Name', 'Contact', 'District', 'Delivery Mode', 'Delivery Centre', 'Order No', 'Products Code', 'Products Quantity', 'Order Total Price']
+# === CONFIG ===
+WORKBOOK_PATH = os.path.join("data", "CENTRAL_REGION_1ST_FULLY_PAID_DATA.xlsx")
+SHEET_NAME = "DEDZA"
+COLLECTED_FILE = os.path.join("data", "collected_dedza.csv")
+DISPLAY_FIELDS = [
+    "Farmer Name", "Contact", "District", "Delivery Mode",
+    "Delivery Centre", "Order No", "Products Code", "Products Quantity", "Order Total Price"
+]
 
 # === Load sheet once to speed up searches ===
 def load_and_prepare():
@@ -31,11 +34,11 @@ def load_and_prepare():
 
 MASTER_DF = load_and_prepare()  # cache for fast lookups
 
-# === Fixed load_collected() to auto-create CSV if missing ===
+# === Load or create collected CSV ===
 def load_collected():
     if not os.path.exists(COLLECTED_FILE):
+        os.makedirs(os.path.dirname(COLLECTED_FILE), exist_ok=True)
         pd.DataFrame(columns=["Order No","Contact","MarkedBy","Timestamp"]).to_csv(COLLECTED_FILE, index=False)
-        return pd.DataFrame(columns=["Order No","Contact","MarkedBy","Timestamp"])
     try:
         return pd.read_csv(COLLECTED_FILE, dtype=str)
     except Exception:
@@ -80,28 +83,29 @@ app.index_string = '''
 </html>
 '''
 
+# === Layout ===
 app.layout = html.Div(style={"backgroundColor": "#0B132B", "color": "#F0F0F0",
-                              "fontFamily":"Arial, sans-serif", "padding":"20px"}, children=[
+                             "fontFamily":"Arial, sans-serif", "padding":"20px"}, children=[
 
     html.H2(f"LOOKUP - {SHEET_NAME}", style={"color":"#F0F0F0","textAlign":"center","marginBottom":"30px"}),
 
     html.Div([
         dcc.Input(id="search-input", type="text", placeholder="Enter Order No or Contact",
                   style={"width":"260px","padding":"8px","borderRadius":"6px",
-                          "border":"1px solid #444","backgroundColor":"#2C2C3C",
-                          "color":"#F0F0F0","marginRight":"8px"}),
+                         "border":"1px solid #444","backgroundColor":"#2C2C3C",
+                         "color":"#F0F0F0","marginRight":"8px"}),
 
         html.Br(), html.Br(),
 
         html.Button("Search", id="search-btn", n_clicks=0,
                     style={"padding":"8px 12px","borderRadius":"6px","border":"none",
-                            "backgroundColor":"#2196F3","color":"#FFF",
-                            "fontWeight":"bold","cursor":"pointer","marginRight":"10px"}),
+                           "backgroundColor":"#2196F3","color":"#FFF",
+                           "fontWeight":"bold","cursor":"pointer","marginRight":"10px"}),
 
         html.Button("Mark Delivered", id="mark-btn", n_clicks=0,
                     style={"padding":"8px 12px","borderRadius":"6px","border":"none",
-                            "backgroundColor":"#006400","color":"#FFF",
-                            "fontWeight":"bold","cursor":"pointer"}),
+                           "backgroundColor":"#006400","color":"#FFF",
+                           "fontWeight":"bold","cursor":"pointer"}),
 
         html.Div(id="action-msg", style={"marginTop":"10px","color":"#28A745","fontWeight":"bold"})
     ], style={"textAlign":"left","marginBottom":"20px"}),
@@ -110,12 +114,13 @@ app.layout = html.Div(style={"backgroundColor": "#0B132B", "color": "#F0F0F0",
         html.H4("Order / Farmer Details", style={"marginBottom":"10px"}),
         dash_table.DataTable(
             id="result-table",
-            columns=[{"name": c, "id": c} for c in DISPLAY_FIELDS if c != "Order Total Price"] + [{"name":"Order Total Price (MWK)","id":"Order Total Price (MWK)"}],
+            columns=[{"name": c, "id": c} for c in DISPLAY_FIELDS if c != "Order Total Price"] +
+                    [{"name":"Order Total Price (MWK)","id":"Order Total Price (MWK)"}],
             data=[],
             style_table={"overflowX":"auto","maxWidth":"100%"},
             style_header={"backgroundColor":"#2C2C3C","color":"#F0F0F0","fontWeight":"bold","border":"1px solid #444"},
             style_cell={"backgroundColor":"#0B132B","color":"#F0F0F0","padding":"6px",
-                         "border":"1px solid #444","textAlign":"left","fontSize":"14px"},
+                        "border":"1px solid #444","textAlign":"left","fontSize":"14px"},
             style_data_conditional=[
                 {"if": {"row_index":"odd"}, "backgroundColor":"#111A35"},
                 {"if": {"row_index":"even"}, "backgroundColor":"#0B132B"}
@@ -149,14 +154,15 @@ app.layout = html.Div(style={"backgroundColor": "#0B132B", "color": "#F0F0F0",
 def do_search(n, query):
     if not query:
         return [], ""
-    df = MASTER_DF  # use preloaded data
+    df = MASTER_DF
     q = str(query).strip()
-    mask = df["Order No"].astype(str).str.contains(q, case=False, na=False) | df["Contact"].astype(str).str.contains(q, case=False, na=False)
+    mask = df["Order No"].astype(str).str.contains(q, case=False, na=False) | \
+           df["Contact"].astype(str).str.contains(q, case=False, na=False)
     results = df[mask].copy()
     if results.empty:
         return [], html.Div("❌ No record found.", style={"color":"#FFA500"})
     if "Order Total Price" in results.columns:
-        results["Order Total Price (MWK)"] = results["Order Total Price"].apply(lambda x: f"{{:,.0f}}".format(float(x)))
+        results["Order Total Price (MWK)"] = results["Order Total Price"].apply(lambda x: f"{x:,.0f}")
     out_cols = [c for c in DISPLAY_FIELDS if c != "Order Total Price"] + ["Order Total Price (MWK)"]
     out = results[out_cols].to_dict("records")
     collected = load_collected()
@@ -179,7 +185,8 @@ def mark_collected(n_clicks, query):
         return "", load_collected().to_dict("records")
     df = MASTER_DF
     q = str(query).strip()
-    mask = df["Order No"].astype(str).str.contains(q, case=False, na=False) | df["Contact"].astype(str).str.contains(q, case=False, na=False)
+    mask = df["Order No"].astype(str).str.contains(q, case=False, na=False) | \
+           df["Contact"].astype(str).str.contains(q, case=False, na=False)
     results = df[mask].copy()
     if results.empty:
         return "No matching records to mark.", load_collected().to_dict("records")
@@ -198,11 +205,15 @@ def mark_collected(n_clicks, query):
         msg = "No new orders to mark (already delivered)."
     return msg, collected.to_dict("records")
 
-@app.callback(Output("collected-table","data", allow_duplicate=True),
-              Input("search-input","value"),
-              prevent_initial_call="initial_duplicate")
+@app.callback(
+    Output("collected-table","data", allow_duplicate=True),
+    Input("search-input","value"),
+    prevent_initial_call="initial_duplicate"
+)
 def load_log(_):
     return load_collected().to_dict("records")
 
+# === Run server for Scalingo ===
 if __name__ == "__main__":
-    app.run_server(mode="inline", debug=True)
+    import os
+    app.run_server(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)

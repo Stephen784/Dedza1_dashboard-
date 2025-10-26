@@ -1,4 +1,5 @@
-pandas
-jupyter-dash
-dash
-openpyxl
+pandas>=2.0
+numpy>=1.25
+dash>=2.15
+jupyter-dash>=0.5
+openpyxl>=3.1
